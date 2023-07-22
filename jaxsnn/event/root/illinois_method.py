@@ -22,7 +22,9 @@ class State:
 def illinois_method(f, a, b, eps):
     fa = f(a)
     fb = f(b)
-    (a,fa,b,fb) = jax.lax.cond(jnp.abs(fa) > jnp.abs(fb), lambda: (b,fb,a,fa), lambda: (a,fa,b,fb))
+    (a, fa, b, fb) = jax.lax.cond(
+        jnp.abs(fa) > jnp.abs(fb), lambda: (b, fb, a, fa), lambda: (a, fa, b, fb)
+    )
     init = State(a=a, b=b, fa=fa, fb=fb)
 
     def cond(state: State):
@@ -32,7 +34,7 @@ def illinois_method(f, a, b, eps):
         a = state.a
         b = state.b
         fa = state.fa
-        fb = state.fb  
+        fb = state.fb
         c = a - (fa * (b - a)) / (fb - fa)
         fc = f(c)
         b, fb = jax.lax.cond(fa * fc <= 0, lambda: (a, fa), lambda: (b, 0.5 * fb))

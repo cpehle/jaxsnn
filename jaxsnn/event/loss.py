@@ -5,9 +5,14 @@ import jax.numpy as np
 from jaxsnn.event import custom_lax
 from jaxsnn.base.types import Array, ArrayLike, Spike, Weight
 from jaxsnn.functional.leaky_integrate_and_fire import LIFState
-import hxtorch
 
-log = hxtorch.logger.get("hxtorch.snn.experiment")
+try:
+    import hxtorch
+
+    log = hxtorch.logger.get("hxtorch.snn.experiment")
+except:
+    pass
+
 
 def max_over_time(output: LIFState) -> Array:
     return np.max(output.V, axis=0)

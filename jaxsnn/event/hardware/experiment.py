@@ -10,7 +10,7 @@ import pygrenade_vx as grenade
 import hxtorch
 from hxtorch.snn.utils import calib_helper
 from hxtorch.snn.experiment import NeuronPlacement
-from jaxsnn.base.types import WeightRecurrent, Weight
+from jaxsnn.base.types import Weight
 from jaxsnn.event.hardware.neuron import Neuron
 from jaxsnn.event.hardware.synapse import Synapse
 from jaxsnn.base.types import Spike
@@ -143,17 +143,22 @@ class Experiment:
         #     synapse = Synapse(self, weight.input.T)
         #     synapse.add_to_network_graph(network_builder, self._populations[i].descriptor, self._populations[1].descriptor, self.wafer_config.weight_scaling)
 
-        
         # first weights
-        synapse = Synapse(self, weights[0].input[:, : 100].T)
+        synapse = Synapse(self, weights[0].input[:, :100].T)
         synapse.add_to_network_graph(
-            network_builder, self._populations[0].descriptor, self._populations[1].descriptor, self.wafer_config.weight_scaling
+            network_builder,
+            self._populations[0].descriptor,
+            self._populations[1].descriptor,
+            self.wafer_config.weight_scaling,
         )
 
         # second weights
-        synapse = Synapse(self, weights[0].recurrent[: 100, 100: 103].T)
+        synapse = Synapse(self, weights[0].recurrent[:100, 100:103].T)
         synapse.add_to_network_graph(
-            network_builder, self._populations[1].descriptor, self._populations[2].descriptor, self.wafer_config.weight_scaling
+            network_builder,
+            self._populations[1].descriptor,
+            self._populations[2].descriptor,
+            self.wafer_config.weight_scaling,
         )
 
         network = network_builder.done()

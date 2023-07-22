@@ -23,7 +23,6 @@ from jaxsnn.event.loss import (
 from jaxsnn.event.plot import plt_and_save
 from jaxsnn.event.root import ttfs_solver
 from jaxsnn.event.utils import save_params as save_params_fn
-from jaxsnn.event import custom_lax
 
 # config.update("jax_debug_nans", True)
 
@@ -34,6 +33,7 @@ def train(
     plot: bool = True,
     print_epoch: bool = True,
     save_params: bool = False,
+    hidden_size: int = 120,
 ):
     # neuron params, low v_reset only allows one spike per neuron
     p = LIFParameters(v_reset=-1_000.0, v_th=1.0)
@@ -58,7 +58,7 @@ def train(
 
     # net
     input_size = 5
-    hidden_size = 120
+    hidden_size = hidden_size
     output_size = 3
     n_spikes_hidden = input_size + hidden_size
     n_spikes_output = n_spikes_hidden + 3
@@ -122,6 +122,7 @@ def train(
         partial(loss_wrapper, apply_fn, mse_loss, p.tau_mem, n_neurons, output_size)
     )
 
+    @jax.jit
     def update(
         input: Tuple[optax.OptState, List[Weight]],
         batch: Tuple[Spike, Array],
@@ -161,9 +162,16 @@ def train(
         return state, (test_result, params, duration)
 
     # train the net
-    (opt_state, params), (res, params_over_time, durations) = custom_lax.simple_scan(
-        epoch, (opt_state, params), np.arange(epochs)
-    )
+    # (opt_state, params), (res, params_over_time, durations) = custom_lax.simple_scan(
+    #    epoch, (opt_state, params), np.arange(epochs)
+    # )
+
+    # train the net
+    for i in range(epochs):
+        (opt_state, params), (res, params_over_time, durations) = epoch(
+            (opt_state, params), i
+        )
+
     loss, acc, t_spike, recording = res
 
     time_string = dt.datetime.now().strftime("%H:%M:%S")
@@ -205,6 +213,7 @@ def train(
         "lr_decay": lr_decay,
         "batch_size": batch_size,
         "n_samples": train_samples,
+        "hidden_size": hidden_size,
         "net": [input_size, hidden_size, output_size],
         "n_spikes": [input_size, n_spikes_hidden, n_spikes_output],
         "optimizer": optimizer_fn.__name__,
@@ -226,4 +235,4 @@ if __name__ == "__main__":
     folder = f"jaxsnn/plots/event/yinyang/{dt_string}"
     Path(folder).mkdir(parents=True, exist_ok=True)
     print(f"Running experiment, results in folder: {folder}")
-    train(0, folder, plot=True, print_epoch=True, save_params=True)
+    train(0, folder, plot=True, print_epoch=True, save_params=True, hidden_size=50)

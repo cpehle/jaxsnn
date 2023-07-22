@@ -1,7 +1,8 @@
-from typing import Any, Dict, Tuple, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import pygrenade_vx.network.placed_logical as grenade
 import hxtorch
+
 log = hxtorch.logger.get("hxtorch.snn.modules")
 
 
@@ -10,7 +11,6 @@ class Module:
     Module supplying basic functionality for building SNNs on hardware.
     """
 
-
     def __init__(self, experiment) -> None:
         """
         :param experiment: Experiment to append layer to.
@@ -18,12 +18,14 @@ class Module:
         super().__init__()
         self._changed_since_last_run = True
         self.experiment = experiment
-        self.extra_args: Tuple[Any] = tuple()
+        self.extra_args = ()
         self.extra_kwargs: Dict[str, Any] = {}
         self.size: Optional[int] = None
 
         # Grenade descriptor
-        self.descriptor: Union[grenade.PopulationDescriptor, grenade.ProjectionDescriptor]
+        self.descriptor: Union[
+            grenade.PopulationDescriptor, grenade.ProjectionDescriptor
+        ]
 
     @property
     def changed_since_last_run(self) -> bool:

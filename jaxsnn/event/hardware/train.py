@@ -6,8 +6,6 @@ from jax import random
 from functools import partial
 import jax.numpy as np
 import numpy as onp
-from jaxsnn.base.types import Spike
-from jaxsnn.event.leaky_integrate_and_fire import LIFParameters
 from jaxsnn.event.plot import plt_and_save
 from jaxsnn.event.root import ttfs_solver
 from jaxsnn.event.dataset import linear_dataset
@@ -18,19 +16,19 @@ from jaxsnn.event.functional import batch_wrapper
 from jaxsnn.base.types import Array, Spike, Weight
 from jaxsnn.event import custom_lax
 from jaxsnn.event.loss import first_spike
-import hxtorch
 import jax
 from jaxsnn.event.compose import serial
 from jaxsnn.event.leaky_integrate_and_fire import (
     LIFParameters,
-    HardwareRecurrentLIF,
     HardwareLIF,
-    EventPropLIF
+    EventPropLIF,
 )
 from jaxsnn.event.loss import (
     loss_wrapper_known_spikes,
     mse_loss,
 )
+
+import hxtorch
 
 log = hxtorch.logger.get("hxtorch.snn.experiment")
 
@@ -39,10 +37,12 @@ calib_path = "jaxsnn/event/hardware/calib/calibration_W66F3_leak80_th150_reset80
 
 folder = "jaxsnn/plots/hardware/linear"
 
-def train():
 
+def train():
     # neuron params, low v_reset only allows one spike per neuron
-    p = LIFParameters(v_reset=-0.0, v_th=1.0, tau_syn_inv=1.0 / 6e-6, tau_mem_inv=1.0 / 6e-6)
+    p = LIFParameters(
+        v_reset=-0.0, v_th=1.0, tau_syn_inv=1.0 / 6e-6, tau_mem_inv=1.0 / 6e-6
+    )
 
     # training params
     seed = 42
@@ -53,10 +53,10 @@ def train():
     batch_size = 64
     epochs = 20
     n_train_batches = int(train_samples / batch_size)
-    n_test_batches = int(test_samples / batch_size)
+    # n_test_batches = int(test_samples / batch_size)
     t_late = 2.0 * p.tau_syn
     t_max = 4.0 * p.tau_syn
-    t_max_us = t_max / 1e-6
+    # t_max_us = t_max / 1e-6
 
     weight_mean = 3.0
     weight_std = 0.5
@@ -75,7 +75,7 @@ def train():
     # n spikes
     n_spikes = input_size + 2
 
-    dataset_kwargs =  {
+    dataset_kwargs = {
         "mirror": True,
         "bias_spike": bias_spike,
         "correct_target_time": correct_target_time,
@@ -85,18 +85,9 @@ def train():
 
     rng = random.PRNGKey(seed)
     trainset = linear_dataset(
-        rng,
-        t_late,
-        [n_train_batches, batch_size],
-        **dataset_kwargs
+        rng, t_late, [n_train_batches, batch_size], **dataset_kwargs
     )
-    testset = linear_dataset(
-        rng,
-        t_late,
-        [test_samples],
-        **dataset_kwargs
-    )
-
+    testset = linear_dataset(rng, t_late, [test_samples], **dataset_kwargs)
 
     init_fn, apply_fn = serial_spikes_known(
         HardwareLIF(
@@ -171,7 +162,6 @@ def train():
         params = optax.apply_updates(params, updates)
         return (opt_state, params), (value, grad)
 
-
     def update(input, batch):
         input_spikes, _ = batch
         # hw_spikes = experiment.get_hw_results(input_spikes, params, t_max_us, n_spikes)
@@ -183,7 +173,9 @@ def train():
         input_spikes, target = testset
         # hw_spikes = experiment.get_hw_results(input_spikes, params, t_max_us, n_spikes)
         hw_spikes = jax.vmap(apply_fn_hardware, in_axes=(None, 0))(params, input_spikes)
-        loss, accuracy, t_first_spike = jax.vmap(loss_and_acc, in_axes=(0, 0))(hw_spikes[-1], target)
+        loss, accuracy, t_first_spike = jax.vmap(loss_and_acc, in_axes=(0, 0))(
+            hw_spikes[-1], target
+        )
         return np.mean(loss), np.mean(accuracy), t_first_spike
 
     def loss_and_acc(spikes, target):
@@ -192,12 +184,11 @@ def train():
         accuracy = np.argmin(testset[1], axis=-1) == np.argmin(t_first_spike, axis=-1)
         return loss, accuracy, t_first_spike
 
-
     def epoch(state, i):
         start = time.time()
         state, (recording, grad) = custom_lax.simple_scan(update, state, trainset[:2])
         duration = time.time() - start
-        loss, acc, t_first_spike = test(testset[: 2])
+        loss, acc, t_first_spike = test(testset[:2])
         opt_state, params = state
 
         masked = onp.ma.masked_where(recording[1][0] == np.inf, recording[1][0])
@@ -216,9 +207,23 @@ def train():
         )
         return state, (t_first_spike, params, loss, acc)
 
-    state, (t_first_spike, params_over_time, loss, acc) = custom_lax.simple_scan(epoch, state, np.arange(epochs))
+    state, (t_first_spike, params_over_time, loss, acc) = custom_lax.simple_scan(
+        epoch, state, np.arange(epochs)
+    )
 
-    plt_and_save(folder, testset, None, t_first_spike, params_over_time, loss, acc, p.tau_syn, None, epochs, duplication)
+    plt_and_save(
+        folder,
+        testset,
+        None,
+        t_first_spike,
+        params_over_time,
+        loss,
+        acc,
+        p.tau_syn,
+        None,
+        epochs,
+        duplication,
+    )
 
     # n_output = testset[1].shape[-1]
     # fig, ax1 = plt.subplots(1, n_output, figsize=(5 * n_output, 4))
@@ -237,7 +242,6 @@ def train():
     # plt_prediction(axs[1], testset, t_first_spike, p.tau_syn, duplication=duplication)
     # fig.tight_layout()
     # fig.savefig(f"{folder}/classification.png", dpi=150)
-
 
 
 if __name__ == "__main__":

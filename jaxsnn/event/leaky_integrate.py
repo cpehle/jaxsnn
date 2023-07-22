@@ -16,7 +16,6 @@ def f(A, t0, x0, t):
 
 
 def li_cell(A: Array, ts: Array, weights: Array, spikes: Spike) -> LIFState:
-
     # don't integrate over inf spike times
     first_inf = np.searchsorted(spikes.time, 1_000_000, side="right")
     spikes = Spike(spikes.time[:first_inf], spikes.idx[:first_inf])

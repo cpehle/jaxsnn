@@ -18,7 +18,6 @@ from jaxsnn.event.hardware.utils import (
     simulate_hw_weights,
     add_linear_noise,
     cut_spikes_batch,
-    spike_similarity_batch
 )
 from jaxsnn.event.leaky_integrate_and_fire import (
     LIFParameters,
@@ -52,6 +51,7 @@ MOCK_HW = False
 HW_CYCLE_CORRECTION = -50
 SIM_HW_WEIGTHS = True
 LOAD_FOLDER = None
+
 
 def train(
     seed: int,
@@ -93,7 +93,9 @@ def train(
     correct_target_time = 1.0 * p.tau_syn
     wrong_target_time = 1.5 * p.tau_syn
 
-    log.WARN(f"Mock HW set to {MOCK_HW}, lr: {step_size}, bias spike: {bias_spike}, duplication: {duplication}, sim hw weights: {SIM_HW_WEIGTHS}")
+    log.WARN(
+        f"Mock HW set to {MOCK_HW}, lr: {step_size}, bias spike: {bias_spike}, duplication: {duplication}, sim hw weights: {SIM_HW_WEIGTHS}"
+    )
 
     # net
     input_size = 4 + int(bias_spike is not None)
@@ -161,7 +163,7 @@ def train(
             p=p,
             mean=weight_mean,
             std=weight_std,
-            duplication=duplication if duplicate_neurons else None
+            duplication=duplication if duplicate_neurons else None,
         )
     )
 
@@ -172,13 +174,13 @@ def train(
         log.WARN(f"Loading params from folder: {LOAD_FOLDER}")
         params = [load_params_recurrent(LOAD_FOLDER)]
 
-
     scheduler = optax.exponential_decay(step_size, n_train_batches, lr_decay)
 
     optimizer = optimizer_fn(scheduler)
     opt_state = optimizer.init(params)
 
-    loss_fn = jax.jit(batch_wrapper(
+    loss_fn = jax.jit(
+        batch_wrapper(
             partial(
                 loss_wrapper_known_spikes,
                 apply_fn,
@@ -188,7 +190,8 @@ def train(
                 output_size,
             ),
             in_axes=(None, 0, 0),
-        ))
+        )
+    )
 
     # HW
     experiment = Experiment(wafer_config)
@@ -196,14 +199,16 @@ def train(
     Neuron(hidden_size, p, experiment)
     Neuron(output_size, p, experiment)
 
-
     def update(input, batch):
         opt_state, params, time_data = input
         input_spikes, _ = batch
 
         if MOCK_HW:
             if SIM_HW_WEIGTHS:
-                hw_spikes = hw_mock_batched(simulate_hw_weights(params, wafer_config.weight_scaling), input_spikes)
+                hw_spikes = hw_mock_batched(
+                    simulate_hw_weights(params, wafer_config.weight_scaling),
+                    input_spikes,
+                )
             else:
                 hw_spikes = hw_mock_batched(params, input_spikes)
         else:
@@ -213,21 +218,27 @@ def train(
                 t_max_us,
                 n_spikes=[n_spikes_hidden, n_spikes_output],
                 time_data=time_data,
-                hw_cycle_correction=HW_CYCLE_CORRECTION
+                hw_cycle_correction=HW_CYCLE_CORRECTION,
             )
 
             # merge to one layer
             hw_spikes = [
-                sort_batch(Spike(
-                    idx=np.concatenate((hw_spikes[0].idx, hw_spikes[1].idx), axis=-1),
-                    time=np.concatenate((hw_spikes[0].time, hw_spikes[1].time), axis=-1),
-                ))
+                sort_batch(
+                    Spike(
+                        idx=np.concatenate(
+                            (hw_spikes[0].idx, hw_spikes[1].idx), axis=-1
+                        ),
+                        time=np.concatenate(
+                            (hw_spikes[0].time, hw_spikes[1].time), axis=-1
+                        ),
+                    )
+                )
             ]
 
         # add time noise
-        hw_spikes = [add_linear_noise(hw_spikes[0])]    
+        hw_spikes = [add_linear_noise(hw_spikes[0])]
         return update_software((opt_state, params, time_data), batch, hw_spikes)
-    
+
     # define test function
     def test_loss_fn(params, batch):
         input_spikes, _ = batch
@@ -236,11 +247,19 @@ def train(
         # sw_spikes = [cut_spikes_batch(filter_spikes_batch(sw_spikes[0], input_size), n_spikes_hidden + n_spikes_output)]
         if MOCK_HW:
             if SIM_HW_WEIGTHS:
-                hw_spikes = hw_mock_batched(simulate_hw_weights(params, wafer_config.weight_scaling), input_spikes)
+                hw_spikes = hw_mock_batched(
+                    simulate_hw_weights(params, wafer_config.weight_scaling),
+                    input_spikes,
+                )
             else:
                 hw_spikes = hw_mock_batched(params, input_spikes)
 
-            hw_spikes = [cut_spikes_batch(filter_spikes_batch(hw_spikes[0], input_size), n_spikes_hidden + n_spikes_output)]
+            hw_spikes = [
+                cut_spikes_batch(
+                    filter_spikes_batch(hw_spikes[0], input_size),
+                    n_spikes_hidden + n_spikes_output,
+                )
+            ]
         else:
             hw_spikes, _ = experiment.get_hw_results(
                 input_spikes,
@@ -253,14 +272,20 @@ def train(
 
             # merge to one layer
             hw_spikes = [
-                sort_batch(Spike(
-                    idx=np.concatenate((hw_spikes[0].idx, hw_spikes[1].idx), axis=-1),
-                    time=np.concatenate((hw_spikes[0].time, hw_spikes[1].time), axis=-1),
-                ))
+                sort_batch(
+                    Spike(
+                        idx=np.concatenate(
+                            (hw_spikes[0].idx, hw_spikes[1].idx), axis=-1
+                        ),
+                        time=np.concatenate(
+                            (hw_spikes[0].time, hw_spikes[1].time), axis=-1
+                        ),
+                    )
+                )
             ]
 
         # spike_similarity_batch(sw_spikes[0], hw_spikes[0])
-    
+
         # add time noise to not have multiple spikes at the same time
         hw_spikes = [add_linear_noise(hw_spikes[0])]
         loss_result = loss_fn(params, batch, hw_spikes)
@@ -270,7 +295,7 @@ def train(
     def update_software(
         input: Tuple[optax.OptState, List[Weight], dict],
         batch: Tuple[Spike, Array],
-        hw_spikes
+        hw_spikes,
     ):
         opt_state, params, hw_time = input
         value, grad = jax.value_and_grad(loss_fn, has_aux=True)(
@@ -300,9 +325,11 @@ def train(
         duration = time.time() - start
         if print_epoch:
             masked = onp.ma.masked_where(t_first_spike == np.inf, t_first_spike)
-            number_of_hidden_spikes = np.sum(input_size <= recording[0].idx, axis=-1).mean()
-            input_param = params[0].input[:,:hidden_size]
-            recurrent_param = params[0].recurrent[:hidden_size,hidden_size:]
+            number_of_hidden_spikes = np.sum(
+                input_size <= recording[0].idx, axis=-1
+            ).mean()
+            input_param = params[0].input[:, :hidden_size]
+            recurrent_param = params[0].recurrent[:hidden_size, hidden_size:]
             log.INFO(
                 f"Epoch {i}, loss: {loss:.6f}, "
                 f"acc: {acc:.3f}, "
@@ -313,16 +340,18 @@ def train(
                 f"params std: {input_param.std():.5f}, {recurrent_param.std():.5f}, ",
                 f"param sat: {np.abs(input_param * wafer_config.weight_scaling > 63).mean():.3f}, {np.abs(recurrent_param * wafer_config.weight_scaling > 63).mean():.3f}, "
                 f"time output: {(masked.mean() / p.tau_syn):.2f} tau_s, "
-            #     f"in {duration:.2f} s, ",
-            #      f"hw time: {state[2].get('get_hw_results', 0.0):.2f} s, ",
-            #     f"grenade run time: {state[2].get('grenade_run', 0.0):.2f} s",
+                #     f"in {duration:.2f} s, ",
+                #      f"hw time: {state[2].get('get_hw_results', 0.0):.2f} s, ",
+                #     f"grenade run time: {state[2].get('grenade_run', 0.0):.2f} s",
             )
         return state, (test_result, params, duration)
 
     # train the net
-    (opt_state, params, timing), (res, params_over_time, durations) = custom_lax.simple_scan(
-        epoch, (opt_state, params, {}), np.arange(epochs)
-    )
+    (opt_state, params, timing), (
+        res,
+        params_over_time,
+        durations,
+    ) = custom_lax.simple_scan(epoch, (opt_state, params, {}), np.arange(epochs))
     loss, acc, t_spike, recording = res  # type: ignore
 
     time_string = dt.datetime.now().strftime("%H:%M:%S")
@@ -388,52 +417,51 @@ def train(
 
 if __name__ == "__main__":
     dt_string = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    folder = f"jaxsnn/plots/hardware/yinyang_{'mock' if MOCK_HW else 'no_mock'}/{dt_string}"
+    folder = (
+        f"jaxsnn/plots/hardware/yinyang_{'mock' if MOCK_HW else 'no_mock'}/{dt_string}"
+    )
     print(f"Running experiment, results in folder: {folder}")
     hxtorch.init_hardware()
     train(0, folder, plot=True, print_epoch=True, save_params=False)
     hxtorch.release_hardware()
 
 
+# non recurrent version
+# _, hw_mock = serial(
+#     EventPropLIF(
+#         n_hidden=hidden_size,
+#         n_spikes=n_spikes_input + n_spikes_hidden,
+#         t_max=t_max,
+#         p=p,
+#         solver=solver,
+#         duplication=duplication if duplicate_neurons else None
+#     ),
+#     EventPropLIF(
+#         n_hidden=output_size,
+#         n_spikes=n_spikes_input + n_spikes_hidden + n_spikes_output,
+#         t_max=t_max,
+#         p=p,
+#         solver=solver,
+#     ),
+# )
+# hw_mock_batched = jax.jit(jax.vmap(hw_mock, in_axes=(None, 0)))
 
-
-
- # non recurrent version
-    # _, hw_mock = serial(
-    #     EventPropLIF(
-    #         n_hidden=hidden_size,
-    #         n_spikes=n_spikes_input + n_spikes_hidden,
-    #         t_max=t_max,
-    #         p=p,
-    #         solver=solver,
-    #         duplication=duplication if duplicate_neurons else None
-    #     ),
-    #     EventPropLIF(
-    #         n_hidden=output_size,
-    #         n_spikes=n_spikes_input + n_spikes_hidden + n_spikes_output,
-    #         t_max=t_max,
-    #         p=p,
-    #         solver=solver,
-    #     ),
-    # )
-    # hw_mock_batched = jax.jit(jax.vmap(hw_mock, in_axes=(None, 0)))
-
-    # init_fn, apply_fn = serial_spikes_known(
-    #     HardwareLIF(
-    #         n_hidden=hidden_size,
-    #         n_spikes=n_spikes_input + n_spikes_hidden,
-    #         t_max=t_max,
-    #         p=p,
-    #         mean=weight_mean[0],
-    #         std=weight_std[0],
-    #         duplication=duplication if duplicate_neurons else None
-    #     ),
-    #     HardwareLIF(
-    #         n_hidden=output_size,
-    #         n_spikes=n_spikes_input + n_spikes_hidden + n_spikes_output,
-    #         t_max=t_max,
-    #         p=p,
-    #         mean=weight_mean[1],
-    #         std=weight_std[1],
-    #     ),
-    # )
+# init_fn, apply_fn = serial_spikes_known(
+#     HardwareLIF(
+#         n_hidden=hidden_size,
+#         n_spikes=n_spikes_input + n_spikes_hidden,
+#         t_max=t_max,
+#         p=p,
+#         mean=weight_mean[0],
+#         std=weight_std[0],
+#         duplication=duplication if duplicate_neurons else None
+#     ),
+#     HardwareLIF(
+#         n_hidden=output_size,
+#         n_spikes=n_spikes_input + n_spikes_hidden + n_spikes_output,
+#         t_max=t_max,
+#         p=p,
+#         mean=weight_mean[1],
+#         std=weight_std[1],
+#     ),
+# )

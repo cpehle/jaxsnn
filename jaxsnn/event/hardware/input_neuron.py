@@ -1,12 +1,12 @@
 from .module import Module
-import time
 import pygrenade_vx.network.placed_logical as grenade
 from jaxsnn.base.types import Spike
-import hxtorch
-from jaxsnn.event.hardware import utils
 import numpy as onp
 from jaxsnn.event.leaky_integrate_and_fire import LIFParameters
+
+
 import _hxtorch_core
+import hxtorch
 
 log = hxtorch.logger.get("hxtorch.snn.modules")
 
