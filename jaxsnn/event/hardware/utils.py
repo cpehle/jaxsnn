@@ -5,7 +5,9 @@ from jax import random
 from typing import List, Optional
 import jax
 from functools import partial
+
 import hxtorch
+
 
 log = hxtorch.logger.get("hxtorch.snn.experiment")
 

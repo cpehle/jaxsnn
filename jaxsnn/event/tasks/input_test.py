@@ -1,9 +1,19 @@
 import datetime as dt
 import json
 import time
+
+try:
+    import hxtorch
+except ModuleNotFoundError:
+    import pytest
+
+    pytest.skip("skipping because hxtorch was not found", allow_module_level=True)
+
 from jaxsnn.event.hardware.experiment import Experiment
 from jaxsnn.event.hardware.neuron import Neuron
 from jaxsnn.event.hardware.input_neuron import InputNeuron
+from jaxsnn.event.dataset import yinyang_dataset
+
 from functools import partial
 from pathlib import Path
 from typing import List, Tuple
@@ -12,14 +22,14 @@ import numpy as onp
 import jax.numpy as np
 import optax
 from jax import random
-import hxtorch
+import pytest
+
 from jaxsnn.event.hardware.utils import (
     simulate_hw_weights,
 )
 
 from jaxsnn.base.types import Array, Spike, Weight
 from jaxsnn.event.compose import serial, serial_spikes_known
-from jaxsnn.event.dataset import yinyang_dataset
 from jaxsnn.event.functional import batch_wrapper
 from jaxsnn.event.leaky_integrate_and_fire import (
     LIFParameters,
@@ -83,11 +93,36 @@ def train(
 
     # net
     input_size = 5
+    hidden_size = 20
     output_size = 1
+
+    n_spikes_input = input_size
+    n_spikes_hidden = input_size + hidden_size
+    n_spikes_output = n_spikes_hidden + output_size
+
+    n_neurons = hidden_size
 
     rng = random.PRNGKey(seed)
     param_rng, train_rng, test_rng = random.split(rng, 3)
 
+    trainset = yinyang_dataset(
+        train_rng,
+        t_late,
+        [n_train_batches, batch_size],
+        mirror=True,
+        bias_spike=bias_spike,
+        correct_target_time=correct_target_time,
+        wrong_target_time=wrong_target_time,
+    )
+    testset = yinyang_dataset(
+        test_rng,
+        t_late,
+        [n_test_batches, batch_size],
+        mirror=True,
+        bias_spike=bias_spike,
+        correct_target_time=correct_target_time,
+        wrong_target_time=wrong_target_time,
+    )
     solver = partial(ttfs_solver, p.tau_mem, p.v_th)
 
     # declare mock net
@@ -125,6 +160,8 @@ def train(
     # init params and optimizer
     params = init_fn(param_rng, input_size)
     scheduler = optax.exponential_decay(step_size, n_train_batches, lr_decay)
+
+    optimizer_fn = optax.adam
 
     optimizer = optimizer_fn(scheduler)
     opt_state = optimizer.init(params)
