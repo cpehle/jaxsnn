@@ -2,6 +2,7 @@ import datetime as dt
 import json
 from functools import partial
 from typing import List, Tuple
+from pathlib import Path
 
 import jax
 import jax.numpy as np
@@ -12,8 +13,8 @@ from jaxsnn.base.types import Array, Spike, Weight
 from jaxsnn.event.compose import serial
 from jaxsnn.event.dataset import circle_dataset
 from jaxsnn.event.functional import batch_wrapper
-from jaxsnn.event.leaky_integrate_and_fire import LIF, LIFParameters, RecurrentLIF
-from jaxsnn.event.loss import loss_and_acc, target_time_loss
+from jaxsnn.event.leaky_integrate_and_fire import LIF, LIFParameters
+from jaxsnn.event.loss import loss_and_acc, loss_wrapper, mse_loss
 from jaxsnn.event.plot import plt_and_save
 from jaxsnn.event.root import ttfs_solver
 
@@ -34,12 +35,12 @@ def train():
     n_batches = int(samples / batch_size)
 
     # net
-    hidden_size = 60
+    hidden_size = 320
     output_size = 2
-    n_spikes_hidden = 60
+    n_spikes_hidden = 800
     n_spikes_output = n_spikes_hidden + 10
     seed = 42
-    optimizer_fn = optax.adabelief
+    optimizer_fn = optax.adamw
 
     rng = random.PRNGKey(seed)
     param_rng, train_rng, test_rng = random.split(rng, 3)
@@ -50,8 +51,12 @@ def train():
 
     # declare net
     init_fn, apply_fn = serial(
-        RecurrentLIF(
-            hidden_size, n_spikes=n_spikes_hidden, t_max=t_max, p=p, solver=solver
+        LIF(
+            hidden_size,
+            n_spikes=n_spikes_hidden,
+            t_max=t_max,
+            p=p,
+            solver=solver,
         ),
         LIF(output_size, n_spikes=n_spikes_output, t_max=t_max, p=p, solver=solver),
     )
@@ -62,8 +67,12 @@ def train():
     optimizer = optimizer_fn(step_size)
     opt_state = optimizer.init(params)
 
+    n_neurons = params[0].input.shape[0] + hidden_size + output_size
+
     # declare update function
-    loss_fn = batch_wrapper(partial(target_time_loss, apply_fn, tau_mem))
+    loss_fn = batch_wrapper(
+        partial(loss_wrapper, apply_fn, mse_loss, p.tau_mem, n_neurons, output_size)
+    )
 
     # define update function
     def update(
@@ -79,13 +88,19 @@ def train():
     def epoch(state, i):
         state, _ = jax.lax.scan(update, state, trainset[:2])
         params = state[1]
+
         test_result = loss_and_acc(loss_fn, params, testset[:2])
+        loss, accuracy, t_first_spike, recording = test_result
+        spikes = np.sum(recording[1].idx >= 0, axis=-1).mean()
         jax.debug.print(
-            "Epoch {i}, loss: {loss}, acc: {acc:}",
+            "Epoch {i}, loss: {loss}, acc: {acc:}, spikes: {spikes}, ratio: {ratio}",
             i=i,
-            loss=round(test_result[0], 3),
-            acc=round(test_result[1], 3),
+            loss=round(loss, 3),
+            acc=round(accuracy, 3),
+            spikes=spikes,
+            ratio=spikes / hidden_size,
         )
+
         return state, (test_result, params)
 
     # train the net
@@ -97,6 +112,7 @@ def train():
     dt_string = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"Saving with datetime: {dt_string}")
     folder = f"jaxsnn/plots/event/circle/{dt_string}"
+    Path(folder).mkdir(parents=True, exist_ok=True)
 
     # generate plots
     plt_and_save(
@@ -129,7 +145,7 @@ def train():
         "max_accuracy": round(np.max(acc).item(), 5),
         "target": [np.min(testset[1]).item(), np.max(testset[1]).item()],
     }
-    with open(f"{folder}_params.json", "w") as outfile:
+    with open(f"{folder}/params.json", "w") as outfile:
         json.dump(experiment, outfile, indent=4)
 
 
